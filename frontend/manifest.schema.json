@@ -1,0 +1,684 @@
+{
+  "$defs": {
+    "BuildTestSteps": {
+      "additionalProperties": false,
+      "properties": {
+        "format": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FixedCommand"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "build": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FixedCommand"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "test": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FixedCommand"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "BuildTestSteps",
+      "type": "object",
+      "required": [
+        "format",
+        "build",
+        "test"
+      ]
+    },
+    "FixedCommand": {
+      "additionalProperties": false,
+      "properties": {
+        "argv": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 64,
+          "minItems": 1,
+          "title": "Argv",
+          "type": "array"
+        },
+        "working_directory": {
+          "default": "repo",
+          "title": "Working Directory",
+          "type": "string"
+        },
+        "timeout_seconds": {
+          "default": 120,
+          "maximum": 600,
+          "minimum": 1,
+          "title": "Timeout Seconds",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "argv",
+        "working_directory",
+        "timeout_seconds"
+      ],
+      "title": "FixedCommand",
+      "type": "object"
+    },
+    "McpServer": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "type": {
+          "default": "stdio",
+          "enum": [
+            "stdio",
+            "streamable-http"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "command": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Command"
+        },
+        "args": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Args",
+          "type": "array"
+        },
+        "env": {
+          "additionalProperties": {
+            "const": "placeholder",
+            "type": "string"
+          },
+          "title": "Env",
+          "type": "object"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Url"
+        },
+        "bearer_token_env": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bearer Token Env"
+        },
+        "snapshot": {
+          "items": {
+            "$ref": "#/$defs/ToolSnapshot"
+          },
+          "maxItems": 256,
+          "title": "Snapshot",
+          "type": "array"
+        },
+        "selected_tools": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 128,
+          "title": "Selected Tools",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "type",
+        "command",
+        "args",
+        "env",
+        "url",
+        "bearer_token_env",
+        "snapshot",
+        "selected_tools"
+      ],
+      "title": "McpServer",
+      "type": "object"
+    },
+    "Mount": {
+      "additionalProperties": false,
+      "properties": {
+        "host_path": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Host Path",
+          "type": "string"
+        },
+        "target": {
+          "default": "repo",
+          "title": "Target",
+          "type": "string"
+        },
+        "read_only": {
+          "default": true,
+          "title": "Read Only",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "host_path",
+        "target",
+        "read_only"
+      ],
+      "title": "Mount",
+      "type": "object"
+    },
+    "NamedCommand": {
+      "additionalProperties": false,
+      "properties": {
+        "argv": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 64,
+          "minItems": 1,
+          "title": "Argv",
+          "type": "array"
+        },
+        "working_directory": {
+          "default": "repo",
+          "title": "Working Directory",
+          "type": "string"
+        },
+        "timeout_seconds": {
+          "default": 120,
+          "maximum": 600,
+          "minimum": 1,
+          "title": "Timeout Seconds",
+          "type": "integer"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        }
+      },
+      "required": [
+        "argv",
+        "working_directory",
+        "timeout_seconds",
+        "name",
+        "description"
+      ],
+      "title": "NamedCommand",
+      "type": "object"
+    },
+    "Pricing": {
+      "additionalProperties": false,
+      "properties": {
+        "input_per_million": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Input Per Million"
+        },
+        "output_per_million": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output Per Million"
+        },
+        "cache_read_per_million": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cache Read Per Million"
+        },
+        "cache_write_per_million": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cache Write Per Million"
+        }
+      },
+      "title": "Pricing",
+      "type": "object",
+      "required": [
+        "input_per_million",
+        "output_per_million",
+        "cache_read_per_million",
+        "cache_write_per_million"
+      ]
+    },
+    "PromptOverrides": {
+      "additionalProperties": false,
+      "properties": {
+        "behavior": {
+          "default": "Stop when the task is complete. Do not fabricate file contents or test results.\nReport what changed and which checks you actually ran. Say when you are uncertain.",
+          "maxLength": 10000,
+          "minLength": 1,
+          "title": "Behavior",
+          "type": "string"
+        },
+        "override": {
+          "anyOf": [
+            {
+              "maxLength": 20000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Override"
+        }
+      },
+      "title": "PromptOverrides",
+      "type": "object",
+      "required": [
+        "behavior",
+        "override"
+      ]
+    },
+    "Skill": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "maxLength": 512,
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "content": {
+          "maxLength": 10000,
+          "minLength": 1,
+          "title": "Content",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "description",
+        "content"
+      ],
+      "title": "Skill",
+      "type": "object"
+    },
+    "ToolSnapshot": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "default": "",
+          "maxLength": 4096,
+          "title": "Description",
+          "type": "string"
+        },
+        "inputSchema": {
+          "additionalProperties": true,
+          "title": "Inputschema",
+          "type": "object"
+        }
+      },
+      "required": [
+        "name",
+        "description",
+        "inputSchema"
+      ],
+      "title": "ToolSnapshot",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "const": 1,
+      "default": 1,
+      "title": "Version",
+      "type": "integer"
+    },
+    "name": {
+      "default": "reviewer",
+      "title": "Name",
+      "type": "string"
+    },
+    "display_name": {
+      "default": "Reviewer",
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Display Name",
+      "type": "string"
+    },
+    "description": {
+      "default": "Review an explicitly mounted source directory.",
+      "maxLength": 512,
+      "title": "Description",
+      "type": "string"
+    },
+    "provider": {
+      "default": "anthropic",
+      "enum": [
+        "anthropic",
+        "openai-compatible",
+        "bedrock"
+      ],
+      "title": "Provider",
+      "type": "string"
+    },
+    "base_url": {
+      "anyOf": [
+        {
+          "maxLength": 2048,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Base Url"
+    },
+    "region": {
+      "anyOf": [
+        {
+          "maxLength": 64,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Region"
+    },
+    "api_key_env": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": "ANTHROPIC_API_KEY",
+      "title": "Api Key Env"
+    },
+    "model": {
+      "default": "claude-sonnet-4-5-20250929",
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Model",
+      "type": "string"
+    },
+    "capabilities": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 10,
+      "title": "Capabilities",
+      "type": "array"
+    },
+    "mounts": {
+      "items": {
+        "$ref": "#/$defs/Mount"
+      },
+      "maxItems": 32,
+      "title": "Mounts",
+      "type": "array"
+    },
+    "test_command": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/FixedCommand"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "build_test_steps": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/BuildTestSteps"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "commands": {
+      "items": {
+        "$ref": "#/$defs/NamedCommand"
+      },
+      "maxItems": 16,
+      "title": "Commands",
+      "type": "array"
+    },
+    "allowed_bash_programs": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 32,
+      "title": "Allowed Bash Programs",
+      "type": "array"
+    },
+    "additional_env_vars": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 32,
+      "title": "Additional Env Vars",
+      "type": "array"
+    },
+    "git_directory": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Git Directory"
+    },
+    "mcp_servers": {
+      "items": {
+        "$ref": "#/$defs/McpServer"
+      },
+      "maxItems": 16,
+      "title": "Mcp Servers",
+      "type": "array"
+    },
+    "skills": {
+      "items": {
+        "$ref": "#/$defs/Skill"
+      },
+      "maxItems": 16,
+      "title": "Skills",
+      "type": "array"
+    },
+    "prompt": {
+      "$ref": "#/$defs/PromptOverrides"
+    },
+    "pricing": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Pricing"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "turn_limit": {
+      "default": 12,
+      "maximum": 100,
+      "minimum": 1,
+      "title": "Turn Limit",
+      "type": "integer"
+    },
+    "wall_clock_limit_seconds": {
+      "default": 900,
+      "maximum": 86400,
+      "minimum": 1,
+      "title": "Wall Clock Limit Seconds",
+      "type": "integer"
+    },
+    "max_output_tokens": {
+      "default": 8192,
+      "maximum": 64000,
+      "minimum": 1,
+      "title": "Max Output Tokens",
+      "type": "integer"
+    },
+    "max_file_bytes": {
+      "default": 1000000,
+      "maximum": 10000000,
+      "minimum": 1,
+      "title": "Max File Bytes",
+      "type": "integer"
+    },
+    "max_tool_output": {
+      "default": 1000000,
+      "maximum": 10000000,
+      "minimum": 1,
+      "title": "Max Tool Output",
+      "type": "integer"
+    },
+    "default_command_timeout_seconds": {
+      "default": 120,
+      "maximum": 600,
+      "minimum": 1,
+      "title": "Default Command Timeout Seconds",
+      "type": "integer"
+    },
+    "git_log_count": {
+      "default": 10,
+      "maximum": 1000,
+      "minimum": 1,
+      "title": "Git Log Count",
+      "type": "integer"
+    },
+    "mcp_read_timeout_seconds": {
+      "default": 30,
+      "maximum": 300,
+      "minimum": 1,
+      "title": "Mcp Read Timeout Seconds",
+      "type": "integer"
+    }
+  },
+  "title": "Manifest",
+  "type": "object",
+  "required": [
+    "version",
+    "name",
+    "display_name",
+    "description",
+    "provider",
+    "base_url",
+    "region",
+    "api_key_env",
+    "model",
+    "capabilities",
+    "mounts",
+    "test_command",
+    "build_test_steps",
+    "commands",
+    "allowed_bash_programs",
+    "additional_env_vars",
+    "git_directory",
+    "mcp_servers",
+    "skills",
+    "prompt",
+    "pricing",
+    "turn_limit",
+    "wall_clock_limit_seconds",
+    "max_output_tokens",
+    "max_file_bytes",
+    "max_tool_output",
+    "default_command_timeout_seconds",
+    "git_log_count",
+    "mcp_read_timeout_seconds"
+  ]
+}

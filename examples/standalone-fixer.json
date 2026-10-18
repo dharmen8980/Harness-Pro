@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "name": "standalone-fixer",
+  "display_name": "Fixer",
+  "description": "Fix Python source and run one fixed test command.",
+  "provider": "anthropic",
+  "api_key_env": "ANTHROPIC_API_KEY",
+  "model": "claude-sonnet-4-5-20250929",
+  "capabilities": ["repo_read", "file_edit", "run_tests"],
+  "mounts": [{"host_path": "/absolute/path/to/python-project", "target": "repo", "read_only": false}],
+  "test_command": {
+    "argv": ["python3", "-m", "pytest", "-q"],
+    "working_directory": "repo",
+    "timeout_seconds": 120
+  },
+  "skills": [{"name": "small-fixes", "description": "Keep repairs focused", "content": "Make the smallest change that fixes the reported failure. Run the configured tests and report their result."}],
+  "turn_limit": 20,
+  "wall_clock_limit_seconds": 900
+}

@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "harness-pro"
+version = "0.2.0"
+description = "Deterministic, provider-agnostic agent harness with explicit capabilities"
+requires-python = ">=3.11"
+dependencies = ["pydantic>=2.11,<3", "httpx>=0.28,<1", "jsonschema>=4.26,<5"]
+
+[project.scripts]
+harness = "harness.cli:main"
+
+[project.optional-dependencies]
+api = ["fastapi>=0.115,<1", "uvicorn>=0.34,<1"]
+snapshot = ["mcp>=1.12,<2"]
+dev = ["pytest>=8,<10", "httpx>=0.28,<1"]
+
+[tool.setuptools.packages.find]
+include = ["builder*", "harness*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

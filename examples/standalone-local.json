@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "name": "local-reviewer",
+  "display_name": "Local reviewer",
+  "description": "Review an explicitly mounted source directory with a local OpenAI-compatible model.",
+  "provider": "openai-compatible",
+  "base_url": "http://127.0.0.1:11434/v1",
+  "api_key_env": null,
+  "model": "qwen3-coder",
+  "capabilities": ["repo_read"],
+  "mounts": [{"host_path": "/absolute/path/to/project/src", "target": "repo", "read_only": true}],
+  "turn_limit": 12,
+  "wall_clock_limit_seconds": 900
+}

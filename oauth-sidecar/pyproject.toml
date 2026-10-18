@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "harness-oauth-sidecar"
+version = "0.1.0"
+description = "Standalone OAuth token refresher for remote MCP servers"
+requires-python = ">=3.11"
+dependencies = ["mcp>=1.30,<2", "httpx>=0.28,<1", "pydantic>=2.11,<3"]
+
+[project.scripts]
+harness-oauth = "oauth_sidecar.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["oauth_sidecar*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

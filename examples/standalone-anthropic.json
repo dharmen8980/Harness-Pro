@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "name": "anthropic-reviewer",
+  "display_name": "Anthropic reviewer",
+  "description": "Review an explicitly mounted source directory with the Anthropic Messages API.",
+  "provider": "anthropic",
+  "api_key_env": "ANTHROPIC_API_KEY",
+  "model": "claude-sonnet-4-5-20250929",
+  "capabilities": ["repo_read"],
+  "mounts": [{"host_path": "/absolute/path/to/project/src", "target": "repo", "read_only": true}],
+  "turn_limit": 12,
+  "wall_clock_limit_seconds": 900
+}

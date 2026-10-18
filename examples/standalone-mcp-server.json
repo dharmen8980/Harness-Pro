@@ -1,0 +1,5 @@
+{
+  "name": "documentation",
+  "type": "streamable-http",
+  "url": "https://learn.microsoft.com/api/mcp"
+}

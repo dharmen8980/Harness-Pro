@@ -1,0 +1,13 @@
+.work/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+node_modules/
+frontend/dist/
+dist/
+*.tsbuildinfo
+out/
+build/
+.DS_Store

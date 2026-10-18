@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "name": "standalone-release-committer",
+  "display_name": "Standalone release committer",
+  "description": "Review and commit tracked changes in an explicitly mounted release workspace.",
+  "provider": "anthropic",
+  "api_key_env": "ANTHROPIC_API_KEY",
+  "model": "claude-sonnet-4-5-20250929",
+  "capabilities": ["repo_read", "git_read", "git_write"],
+  "mounts": [{"host_path": "/absolute/path/to/sanitized-release-workspace", "target": "repo", "read_only": false}],
+  "git_directory": "repo",
+  "prompt": {"behavior": "Inspect tracked changes before committing. Stop when the requested commit is complete. Report the commit and checks actually run."},
+  "turn_limit": 12,
+  "wall_clock_limit_seconds": 900
+}
