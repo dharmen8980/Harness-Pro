@@ -265,6 +265,8 @@ def compile_standalone(manifest: Manifest | dict) -> dict:
             "baseUrl": manifest.base_url,
             "region": manifest.region if manifest.provider == "bedrock" else None,
             "apiKeyEnv": manifest.api_key_env,
+            **({"auth": manifest.bedrock_auth, "awsProfile": manifest.aws_profile}
+               if manifest.provider == "bedrock" else {}),
         },
         "model": manifest.model,
         "maxTurns": manifest.turn_limit,

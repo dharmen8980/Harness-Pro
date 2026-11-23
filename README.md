@@ -19,6 +19,16 @@ CLI.
 Python 3.11 or newer is required.
 
 ```sh
+pip install harness-pro              # or: uvx harness-pro --help
+pip install 'harness-pro[bedrock]'   # adds Amazon Bedrock SigV4 support
+```
+
+The package installs the `harness-pro` command, with `hpro` as a short alias.
+`harness` still works for existing setups.
+
+From a checkout:
+
+```sh
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e .
@@ -33,21 +43,33 @@ python -m pip install -e '.[api]'
 # MCP discovery and MCP-backed runs
 python -m pip install -e '.[snapshot]'
 
+# Amazon Bedrock with SigV4 (AWS profiles, SSO, IAM roles)
+python -m pip install -e '.[bedrock]'
+
 # Everything needed for local development and verification
-python -m pip install -e '.[api,snapshot,dev]'
+python -m pip install -e '.[api,snapshot,bedrock,dev]'
 ```
 
 ## Quick start
 
-Copy an example and replace its placeholder host path and model. Anthropic
+`init` writes a read-only reviewer manifest for the current directory:
+
+```sh
+cd my-project
+harness-pro init                                  # Anthropic, uses ANTHROPIC_API_KEY
+harness-pro init --provider bedrock --region us-west-2   # Bedrock with your AWS credentials
+harness-pro run --manifest harness-pro.json --prompt "Review this project"
+```
+
+Or copy an example and replace its placeholder host path and model. Anthropic
 manifests use `ANTHROPIC_API_KEY` by default:
 
 ```sh
 cp examples/standalone-anthropic.json my-agent.json
 export ANTHROPIC_API_KEY=...
 
-harness compile --manifest my-agent.json -o runtime.json
-harness run --manifest my-agent.json \
+harness-pro compile --manifest my-agent.json -o runtime.json
+harness-pro run --manifest my-agent.json \
   --prompt "Review the mounted source and report your findings." \
   --trace-file trace.jsonl
 ```
@@ -123,6 +145,7 @@ responsible for keeping current.
 | `custom_commands` | One fixed-argv action per named command | Nonempty `commands` list inside mounts |
 | `git_read` | Fixed status, diff, and recent-log actions | `git_directory` inside a mount |
 | `git_write` | `git_commit` with one bounded message | Writable `git_directory` |
+| `bash_commands` | `Bash` with a model-supplied command string | `allowed_bash_programs` and a mount |
 | `mcp_tools` | Individually selected, snapshot-verified MCP tools | Imported server snapshots |
 
 The test/build operation and custom commands accept no model-supplied
@@ -145,8 +168,29 @@ arguments. For example, a manifest can expose a fixed `glab mr list` command:
 
 Git commit uses
 `git commit -a`, so it commits tracked changes but does not stage untracked
-files; hooks and commit signing are disabled. There is no arbitrary shell or
-general web capability.
+files; hooks and commit signing are disabled. There is no general web
+capability.
+
+### Bash allowlist
+
+`bash_commands` is the only capability where the model writes the command. It
+is a policy control, not a sandbox. Before running anything, Harness Pro:
+
+- checks the leading program of every segment joined by `&&`, `||`, `;` or `|`
+  against `allowed_bash_programs`;
+- rejects every other shell operator: background jobs (`&`), redirects (`>`,
+  `>>`, `<`, `&>`, `2>&1`), here-strings and subshells;
+- rejects command and process substitution, unquoted or double-quoted `$`
+  expansion, a leading `~`, and literal newlines;
+- rejects options that let common programs run other programs or leave the
+  mount: `git -c`, `-C`, `--git-dir`, `--work-tree`, `--exec-path`,
+  `--upload-pack`, `--output` and `git config`; `find -exec`, `-execdir`,
+  `-ok`, `-delete` and `-fprint`.
+
+It does not confine arguments. An allowed program can read or write any path
+it is given, and `bash`, `python3`, `awk`, `sed`, `xargs`, `tee`, `dd`, `cp`,
+`mv` and `rm` can run code or change files anywhere the process can. Only
+allow those when the run is already isolated, for example in a container.
 
 Inline skills are prompt text, not executable packages. Capability and
 workspace guidance is generated from the compiled tool list, so prompt text
@@ -173,14 +217,31 @@ cannot grant additional access.
 
 - `provider` is `"bedrock"` and `region` is a required AWS region such as
   `"us-east-1"`; `base_url` must be `null` or omitted.
-- `api_key_env` names the bearer-token environment variable. The conventional
-  name is `AWS_BEARER_TOKEN_BEDROCK`, populated with a short-term or long-term
-  Bedrock API key generated through AWS.
+- `bedrock_auth` chooses how requests are authenticated:
+  - `"bearer"` (default): `api_key_env` names the bearer-token environment
+    variable. The conventional name is `AWS_BEARER_TOKEN_BEDROCK`, populated
+    with a short-term or long-term Bedrock API key generated through AWS.
+  - `"sigv4"`: requests are signed with AWS Signature Version 4 using the
+    standard AWS credential chain: environment variables, shared config and
+    SSO profiles, and container or instance roles. `api_key_env` must be
+    `null` or omitted. `aws_profile` optionally names a profile. Credentials
+    are re-read for every request, so expiring SSO or role credentials refresh
+    during long runs. Needs `pip install 'harness-pro[bedrock]'`.
 - `model` must carry the `anthropic.` prefix, such as
   `"anthropic.claude-sonnet-5"`.
 
-This path uses Bedrock Mantle bearer-token authentication only; it does not
-implement SigV4 and adds no AWS SDK dependency.
+```json
+{
+  "provider": "bedrock",
+  "region": "us-west-2",
+  "bedrock_auth": "sigv4",
+  "aws_profile": "dev-sso",
+  "model": "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+}
+```
+
+The compiler records the auth mode and profile name only. Credentials are
+resolved when the run starts and are redacted from the trace.
 
 See [standalone-local.json](examples/standalone-local.json) for a loopback
 configuration. Provider and MCP credential values are resolved only in the

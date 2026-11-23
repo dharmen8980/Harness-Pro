@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime
 from io import StringIO
 import json
 
@@ -6,7 +7,7 @@ import httpx
 import pytest
 
 from harness.errors import ProviderError
-from harness.providers import AnthropicAdapter, BedrockInvokeAdapter, OpenAICompatibleAdapter, Usage, compute_cost, make_adapter
+from harness.providers import AnthropicAdapter, BedrockInvokeAdapter, BedrockSigV4Adapter, OpenAICompatibleAdapter, Usage, compute_cost, make_adapter
 from harness.trace import TraceEmitter
 
 
@@ -94,6 +95,88 @@ def test_bedrock_adapter_uses_invoke_wire_format():
     }
     assert result.text == "done" and result.stop_reason == "end_turn"
     assert result.usage == Usage(12, 5, 4, 8)
+
+
+AWS_ENV = ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "AWS_PROFILE",
+           "AWS_DEFAULT_PROFILE", "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", "AWS_CONTAINER_CREDENTIALS_FULL_URI",
+           "AWS_WEB_IDENTITY_TOKEN_FILE", "AWS_ROLE_ARN")
+
+
+@pytest.fixture
+def isolated_aws(monkeypatch, tmp_path):
+    for name in AWS_ENV:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("AWS_CONFIG_FILE", str(tmp_path / "missing-config"))
+    monkeypatch.setenv("AWS_SHARED_CREDENTIALS_FILE", str(tmp_path / "missing-credentials"))
+    monkeypatch.setenv("AWS_EC2_METADATA_DISABLED", "true")
+    return monkeypatch
+
+
+def test_bedrock_sigv4_adapter_signs_exactly_the_bytes_it_sends(isolated_aws):
+    from botocore.auth import SigV4Auth
+    from botocore.awsrequest import AWSRequest
+    from botocore.credentials import Credentials
+    import botocore.auth
+
+    fixed = datetime(2026, 11, 23, 12, 0, 0)
+    isolated_aws.setattr(botocore.auth, "get_current_datetime", lambda: fixed)
+    credentials = Credentials("AKIDEXAMPLE", "secret-key-value", "session-token-value")
+    requests = []
+    trace_stream = StringIO()
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(200, json={"content": [{"type": "text", "text": "done"}], "stop_reason": "end_turn",
+                                         "usage": {"input_tokens": 1, "output_tokens": 1}})
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await BedrockSigV4Adapter(client, "us-west-2", credentials=credentials).complete(
+                system_prompt="system", messages=[{"role": "user", "content": "hello"}], tools=[],
+                model="us.anthropic.claude-sonnet-5-v1:0", max_tokens=64, timeout=10,
+                trace=TraceEmitter(trace_stream),
+            )
+
+    assert asyncio.run(run()).text == "done"
+    sent = requests[0]
+    assert sent.headers["x-amz-date"] == "20261123T120000Z"
+    assert sent.headers["x-amz-security-token"] == "session-token-value"
+    assert sent.headers["authorization"].startswith(
+        "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20261123/us-west-2/bedrock/aws4_request")
+    assert "x-api-key" not in sent.headers
+
+    def expected_authorization(body: bytes) -> str:
+        request = AWSRequest(method="POST", url=str(sent.url), data=body,
+                             headers={"content-type": "application/json", "accept": "application/json"})
+        SigV4Auth(credentials.get_frozen_credentials(), "bedrock", "us-west-2").add_auth(request)
+        return request.headers["Authorization"]
+
+    assert sent.headers["authorization"] == expected_authorization(sent.content)
+    assert sent.headers["authorization"] != expected_authorization(sent.content + b" ")
+    trace = trace_stream.getvalue()
+    assert "secret-key-value" not in trace and "session-token-value" not in trace
+
+
+def test_make_adapter_uses_the_aws_credential_chain_for_sigv4(isolated_aws):
+    isolated_aws.setenv("AWS_ACCESS_KEY_ID", "AKIDFROMENV")
+    isolated_aws.setenv("AWS_SECRET_ACCESS_KEY", "env-secret")
+    adapter = make_adapter({"kind": "bedrock", "baseUrl": None, "region": "eu-west-1", "apiKeyEnv": None,
+                            "auth": "sigv4", "awsProfile": None}, environ={})
+    assert isinstance(adapter, BedrockSigV4Adapter)
+    assert adapter.credentials.get_frozen_credentials().access_key == "AKIDFROMENV"
+    assert adapter._request_endpoint("anthropic.claude-sonnet-5").startswith("https://bedrock-runtime.eu-west-1.")
+
+
+def test_make_adapter_reports_missing_aws_credentials(isolated_aws):
+    with pytest.raises(ProviderError, match="No AWS credentials"):
+        make_adapter({"kind": "bedrock", "baseUrl": None, "region": "us-east-1", "apiKeyEnv": None,
+                      "auth": "sigv4", "awsProfile": None}, environ={})
+
+
+def test_make_adapter_reports_an_unknown_aws_profile(isolated_aws):
+    with pytest.raises(ProviderError, match="could not be resolved"):
+        make_adapter({"kind": "bedrock", "baseUrl": None, "region": "us-east-1", "apiKeyEnv": None,
+                      "auth": "sigv4", "awsProfile": "does-not-exist"}, environ={})
 
 
 def test_anthropic_adapter_caches_last_message_of_growing_conversation():

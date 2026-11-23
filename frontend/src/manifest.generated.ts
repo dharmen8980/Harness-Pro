@@ -12,10 +12,12 @@ export type Description = string;
 export type Provider = "anthropic" | "openai-compatible" | "bedrock";
 export type BaseUrl = string | null;
 export type Region = string | null;
+export type BedrockAuth = "bearer" | "sigv4";
+export type AwsProfile = string | null;
 export type ApiKeyEnv = string | null;
 export type Model = string;
 /**
- * @maxItems 10
+ * @maxItems 11
  */
 export type Capabilities = string[];
 export type HostPath = string;
@@ -45,6 +47,17 @@ export type Description1 = string;
  * @maxItems 16
  */
 export type Commands = NamedCommand[];
+export type Name2 = string;
+export type Description2 = string;
+export type Path = string;
+export type Mode = "read" | "write" | "both";
+export type WriteSchema = {
+  [k: string]: unknown;
+} | null;
+/**
+ * @maxItems 32
+ */
+export type ArtifactFiles = ArtifactFile[];
 /**
  * @maxItems 32
  */
@@ -54,7 +67,7 @@ export type AllowedBashPrograms = string[];
  */
 export type AdditionalEnvVars = string[];
 export type GitDirectory = string | null;
-export type Name2 = string;
+export type Name3 = string;
 export type Type = "stdio" | "streamable-http";
 export type Command = string | null;
 /**
@@ -63,8 +76,8 @@ export type Command = string | null;
 export type Args = string[];
 export type Url = string | null;
 export type BearerTokenEnv = string | null;
-export type Name3 = string;
-export type Description2 = string;
+export type Name4 = string;
+export type Description3 = string;
 /**
  * @maxItems 256
  */
@@ -77,8 +90,8 @@ export type SelectedTools = string[];
  * @maxItems 16
  */
 export type McpServers = McpServer[];
-export type Name4 = string;
-export type Description3 = string;
+export type Name5 = string;
+export type Description4 = string;
 export type Content = string;
 /**
  * @maxItems 16
@@ -107,6 +120,8 @@ export interface Manifest {
   provider: Provider;
   base_url: BaseUrl;
   region: Region;
+  bedrock_auth: BedrockAuth;
+  aws_profile: AwsProfile;
   api_key_env: ApiKeyEnv;
   model: Model;
   capabilities: Capabilities;
@@ -114,6 +129,7 @@ export interface Manifest {
   test_command: FixedCommand | null;
   build_test_steps: BuildTestSteps | null;
   commands: Commands;
+  artifact_files: ArtifactFiles;
   allowed_bash_programs: AllowedBashPrograms;
   additional_env_vars: AdditionalEnvVars;
   git_directory: GitDirectory;
@@ -152,8 +168,22 @@ export interface NamedCommand {
   name: Name1;
   description: Description1;
 }
-export interface McpServer {
+/**
+ * A named file the agent reads/writes by logical name instead of a path.
+ *
+ * Declaring N of these still compiles to at most two tools total (ReadArtifact,
+ * WriteArtifact) — the enum of names grows, not the tool count — which is the
+ * point: the model picks a closed-set name, never guesses a mount alias or path.
+ */
+export interface ArtifactFile {
   name: Name2;
+  description: Description2;
+  path: Path;
+  mode: Mode;
+  write_schema: WriteSchema;
+}
+export interface McpServer {
+  name: Name3;
   type: Type;
   command: Command;
   args: Args;
@@ -167,16 +197,16 @@ export interface Env {
   [k: string]: "placeholder";
 }
 export interface ToolSnapshot {
-  name: Name3;
-  description: Description2;
+  name: Name4;
+  description: Description3;
   inputSchema: Inputschema;
 }
 export interface Inputschema {
   [k: string]: unknown;
 }
 export interface Skill {
-  name: Name4;
-  description: Description3;
+  name: Name5;
+  description: Description4;
   content: Content;
 }
 export interface PromptOverrides {

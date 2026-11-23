@@ -1,0 +1,80 @@
+# Python package (pip install harness-pro / uvx harness-pro): run the tests, build the wheel and
+# sdist, smoke-test the installed wheel, and on a v* tag publish to PyPI with trusted publishing
+# (no token: add this repository and workflow as a trusted publisher on pypi.org first).
+# workflow_dispatch builds and tests without publishing.
+name: pypi-release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pypi-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # No dependency caches: a cache poisoned by another run must not reach the published package.
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          enable-cache: false
+
+      - name: Tag matches the package version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          v=$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml)
+          test "v$v" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME != pyproject version $v"; exit 1; }
+
+      - name: Tests
+        run: |
+          uv venv --python 3.13 .venv
+          uv pip install -e '.[api,snapshot,bedrock,dev]'
+          .venv/bin/python -m pytest -q
+
+      - name: Build wheel + sdist
+        run: uv build --out-dir dist
+
+      - name: Smoke test the installed wheel
+        run: |
+          uv venv --python 3.11 /tmp/x
+          VIRTUAL_ENV=/tmp/x uv pip install "$(ls dist/*.whl)[bedrock]"
+          v=$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml)
+          test "$(/tmp/x/bin/harness-pro --version)" = "harness-pro $v"
+          /tmp/x/bin/hpro --help >/dev/null
+          mkdir /tmp/project && cd /tmp/project
+          /tmp/x/bin/harness-pro init --provider bedrock --region us-west-2
+          /tmp/x/bin/harness-pro compile --manifest harness-pro.json -o runtime.json
+          grep -q '"sigv4"' runtime.json
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: python-dist
+          if-no-files-found: error
+          retention-days: 14
+          path: dist/
+
+  publish:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    environment:
+      name: pypi
+      url: https://pypi.org/project/harness-pro/
+    permissions:
+      id-token: write # trusted publishing
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: python-dist
+          path: dist
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3

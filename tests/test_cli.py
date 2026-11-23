@@ -62,3 +62,24 @@ def test_run_command_has_no_signal_based_timer():
     source = inspect.getsource(cli.run_command)
     assert "signal" not in source
     assert "setitimer" not in source
+
+
+@pytest.mark.parametrize("provider", ["anthropic", "bedrock", "openai-compatible"])
+def test_init_writes_a_manifest_that_compiles(tmp_path, monkeypatch, provider):
+    monkeypatch.chdir(tmp_path)
+    assert cli.main(["init", "--provider", provider, "--region", "eu-central-1"]) == 0
+    manifest = json.loads((tmp_path / "harness-pro.json").read_text())
+    assert manifest["provider"] == provider
+    assert manifest["mounts"] == [{"host_path": str(tmp_path), "target": "repo", "read_only": True}]
+    assert cli.main(["compile", "--manifest", "harness-pro.json", "-o", "runtime.json"]) == 0
+    if provider == "bedrock":
+        assert manifest["bedrock_auth"] == "sigv4" and manifest["region"] == "eu-central-1"
+        assert json.loads((tmp_path / "runtime.json").read_text())["provider"]["auth"] == "sigv4"
+
+
+def test_init_refuses_to_overwrite(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "harness-pro.json").write_text("{}")
+    assert cli.main(["init"]) == cli.EXIT_MALFORMED
+    assert "already exists" in capsys.readouterr().err
+    assert (tmp_path / "harness-pro.json").read_text() == "{}"

@@ -99,10 +99,51 @@ def run_command(args: argparse.Namespace) -> int:
             trace.close()
 
 
+STARTER_MODELS = {
+    "anthropic": "claude-sonnet-4-5-20250929",
+    "bedrock": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+    "openai-compatible": "qwen2.5-coder:7b",
+}
+
+
+def init_command(args: argparse.Namespace) -> int:
+    """Write a read-only reviewer manifest for the current directory."""
+    starter: dict = {
+        "name": "reviewer", "display_name": "Reviewer",
+        "description": "Review the mounted project without changing it.",
+        "provider": args.provider, "model": STARTER_MODELS[args.provider],
+        "capabilities": ["repo_read"],
+        "mounts": [{"host_path": str(Path.cwd()), "target": "repo", "read_only": True}],
+        "turn_limit": 12, "wall_clock_limit_seconds": 900,
+    }
+    if args.provider == "bedrock":
+        starter.update(region=args.region, bedrock_auth="sigv4", api_key_env=None)
+    elif args.provider == "openai-compatible":
+        starter.update(base_url="http://localhost:11434/v1", api_key_env=None)
+    else:
+        starter["api_key_env"] = "ANTHROPIC_API_KEY"
+    try:
+        manifest = Manifest.model_validate(starter)
+    except ValidationError as error:
+        _report_validation(error)
+        return EXIT_MALFORMED
+    if args.output.exists():
+        print(f"{args.output} already exists; choose another path with -o", file=sys.stderr)
+        return EXIT_MALFORMED
+    args.output.write_text(manifest.model_dump_json(include=set(starter), indent=2) + "\n", encoding="utf-8")
+    print(f"Wrote {args.output}. Next: harness-pro run --manifest {args.output} --prompt \"Review this project\"")
+    return 0
+
+
 def parser() -> argparse.ArgumentParser:
-    root = argparse.ArgumentParser(prog="harness", description="Run a manifest-scoped, provider-agnostic coding agent")
-    root.add_argument("--version", action="version", version=f"harness {_app_version()}")
+    root = argparse.ArgumentParser(prog="harness-pro", description="Run a manifest-scoped, provider-agnostic coding agent")
+    root.add_argument("--version", action="version", version=f"harness-pro {_app_version()}")
     commands = root.add_subparsers(dest="command", required=True)
+    init_parser = commands.add_parser("init", help="write a starter read-only manifest for the current directory")
+    init_parser.add_argument("--provider", choices=sorted(STARTER_MODELS), default="anthropic")
+    init_parser.add_argument("--region", default="us-east-1", help="AWS region for --provider bedrock (SigV4)")
+    init_parser.add_argument("-o", "--output", type=Path, default=Path("harness-pro.json"))
+    init_parser.set_defaults(handler=init_command)
     compile_parser = commands.add_parser("compile", help="emit a deterministic standalone runtime config")
     compile_parser.add_argument("--manifest", required=True, type=Path)
     compile_parser.add_argument("-o", "--output", type=Path)

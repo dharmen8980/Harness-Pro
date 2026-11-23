@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 import os
 import subprocess
 import pytest
@@ -278,10 +279,9 @@ def test_disallowed_bash_program_is_rejected_without_execution(tmp_path):
 
 def test_compound_bash_command_is_entirely_rejected_if_one_program_is_disallowed(tmp_path):
     dispatcher = ToolDispatcher(bash_config(tmp_path, ["printf"]))
-    command = "printf first > should-not-exist && touch also-should-not-exist"
+    command = "printf first && touch also-should-not-exist"
     with pytest.raises(PolicyViolation, match="not allowed: touch"):
         asyncio.run(dispatcher.execute("Bash", {"command": command}))
-    assert not (tmp_path / "should-not-exist").exists()
     assert not (tmp_path / "also-should-not-exist").exists()
 
 
@@ -588,3 +588,60 @@ def test_git_commit_output_is_bounded(tmp_path, monkeypatch):
     assert captured[-1][-2:] == ("-m", "safe message")
     assert len(result.encode("utf-8")) <= MAX_TOOL_OUTPUT
     assert json.loads(result)["output"].endswith("[output truncated]")
+
+
+@pytest.mark.parametrize("command, message", [
+    ("printf x & touch background-ran", "operator is not allowed: &"),
+    ("printf x > redirect-ran", "operator is not allowed: >"),
+    ("printf x >> redirect-ran", "operator is not allowed: >>"),
+    ("printf x 2>&1", "operator is not allowed: >&"),
+    ("printf x &> redirect-ran", "operator is not allowed: &>"),
+    ("printf x < /etc/hosts", "operator is not allowed: <"),
+    ("printf x <<< here", "operator is not allowed: <<<"),
+    ("(touch subshell-ran)", "operator is not allowed: ("),
+    ("printf x |& printf y", "operator is not allowed: |&"),
+    ("printf $HOME", "expansion"),
+    ("printf ${HOME}", "expansion"),
+    ('printf "$HOME"', "expansion"),
+    ("printf ~/x", "home directory"),
+])
+def test_bash_rejects_shell_syntax_the_allowlist_cannot_see(tmp_path, command, message):
+    dispatcher = ToolDispatcher(bash_config(tmp_path, ["printf"]))
+    with pytest.raises(PolicyViolation, match=re.escape(message)):
+        asyncio.run(dispatcher.execute("Bash", {"command": command}))
+    assert not list(tmp_path.glob("*-ran"))
+
+
+@pytest.mark.parametrize("command", [
+    "printf '$HOME'", "printf 'a & b > c'", 'printf "a | b"', "printf 'tail$'", "printf \\$HOME",
+])
+def test_bash_allows_operators_and_dollars_inside_quotes(tmp_path, command):
+    dispatcher = ToolDispatcher(bash_config(tmp_path, ["printf"]))
+    result = json.loads(asyncio.run(dispatcher.execute("Bash", {"command": command})))
+    assert result["exit_code"] == 0
+
+
+@pytest.mark.parametrize("command, program", [
+    ("git -c alias.x=!sh x", "git"),
+    ("git -calias.x=!sh x", "git"),
+    ("git -C / status", "git"),
+    ("git --git-dir=/elsewhere/.git log", "git"),
+    ("git config alias.x '!sh'", "git"),
+    ("git fetch --upload-pack=touch origin", "git"),
+    ("git log --output=/tmp/out", "git"),
+    ("find . -exec touch exec-ran ;", "find"),
+    ("find . -delete", "find"),
+    ("find . -fprint out", "find"),
+])
+def test_bash_rejects_options_that_let_allowed_programs_escape(tmp_path, command, program):
+    dispatcher = ToolDispatcher(bash_config(tmp_path, ["git", "find"]))
+    with pytest.raises(PolicyViolation, match=f"argument is not allowed for {program}"):
+        asyncio.run(dispatcher.execute("Bash", {"command": command}))
+    assert not list(tmp_path.glob("*-ran"))
+
+
+def test_bash_allows_ordinary_git_and_find_usage(tmp_path):
+    (tmp_path / "a.txt").write_text("x")
+    dispatcher = ToolDispatcher(bash_config(tmp_path, ["find"]))
+    result = json.loads(asyncio.run(dispatcher.execute("Bash", {"command": "find . -name '*.txt'"})))
+    assert result == {"exit_code": 0, "output": "./a.txt\n"}

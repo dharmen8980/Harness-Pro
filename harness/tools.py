@@ -103,6 +103,49 @@ class PathPolicy:
         return mount.target if not relative.parts else f"{mount.target}/{relative.as_posix()}"
 
 
+BASH_SEPARATORS = frozenset({"&&", "||", ";", "|"})
+BASH_PUNCTUATION = frozenset("();<>|&")  # what shlex(punctuation_chars=True) splits on
+# Options that make an allowed program run other programs, read or write outside its
+# mount, or persist configuration that later invocations would execute.
+BASH_DENIED_ARGUMENTS = {
+    "git": ("-c", "--config-env", "--exec-path", "-C", "--git-dir", "--work-tree", "--upload-pack",
+            "--receive-pack", "--exec", "--output", "config"),
+    "find": ("-exec", "-execdir", "-ok", "-okdir", "-delete", "-fprint", "-fprint0", "-fprintf", "-fls"),
+}
+
+
+def _check_bash_arguments(segment: list[str]) -> None:
+    for denied in BASH_DENIED_ARGUMENTS.get(segment[0], ()):
+        for argument in segment[1:]:
+            bare = argument.strip("'\"")
+            if bare == denied or (denied.startswith("--") and bare.startswith(denied + "=")) or (
+                    denied in {"-c", "-C"} and bare.startswith(denied) and len(bare) > 2):
+                raise PolicyViolation(f"Bash argument is not allowed for {segment[0]}: {denied}")
+
+
+def _unsafe_token(token: str) -> str | None:
+    """Why bash would expand this token into something the check did not see, if it would."""
+    if token.startswith("~"):
+        return "home directory expansion (~)"
+    quote: str | None = None
+    escaped = False
+    for character in token:
+        if escaped:
+            escaped = False
+        elif character == "\\" and quote != "'":
+            escaped = True
+        elif quote:
+            if character == quote:
+                quote = None
+            elif character == "$" and quote == '"':
+                return "variable or parameter expansion ($)"
+        elif character in "'\"":
+            quote = character
+        elif character == "$":
+            return "variable or parameter expansion ($)"
+    return None
+
+
 class ToolDispatcher:
     def __init__(self, config: dict, mcp_runtime: Any = None):
         self.config = config
@@ -322,7 +365,6 @@ class ToolDispatcher:
             if marker in command:
                 raise PolicyViolation(f"Bash command is not allowed: {description}")
         allowlist = set(self.config.get("bashAllowlist", []))
-        operators = {"&&", "||", ";", "|"}
         try:
             lexer = shlex.shlex(command, punctuation_chars=True)
             lexer.whitespace_split = True
@@ -331,13 +373,21 @@ class ToolDispatcher:
             raise PolicyViolation("Bash command has unbalanced quoting") from error
         segment: list[str] = []
         for token in tokens + [";"]:
-            if token in operators:
+            if token in BASH_SEPARATORS:
                 if not segment:
                     raise PolicyViolation("Bash command contains a segment with no leading program")
                 if segment[0] not in allowlist:
                     raise PolicyViolation(f"Bash leading program is not allowed: {segment[0]}")
+                _check_bash_arguments(segment)
                 segment = []
+            elif token and set(token) <= BASH_PUNCTUATION:
+                # Background jobs, redirects, here-docs and subshells would let an allowed
+                # program write or start processes the allowlist never inspected.
+                raise PolicyViolation(f"Bash operator is not allowed: {token}")
             else:
+                reason = _unsafe_token(token)
+                if reason:
+                    raise PolicyViolation(f"Bash command is not allowed: {reason}")
                 segment.append(token)
         if not self.config["mounts"]:
             raise ToolExecutionError("Bash requires at least one declared mount for its working directory")

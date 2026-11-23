@@ -1,5 +1,57 @@
 {
   "$defs": {
+    "ArtifactFile": {
+      "additionalProperties": false,
+      "description": "A named file the agent reads/writes by logical name instead of a path.\n\nDeclaring N of these still compiles to at most two tools total (ReadArtifact,\nWriteArtifact) \u2014 the enum of names grows, not the tool count \u2014 which is the\npoint: the model picks a closed-set name, never guesses a mount alias or path.",
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "mode": {
+          "default": "both",
+          "enum": [
+            "read",
+            "write",
+            "both"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "write_schema": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Write Schema"
+        }
+      },
+      "required": [
+        "name",
+        "description",
+        "path",
+        "mode",
+        "write_schema"
+      ],
+      "title": "ArtifactFile",
+      "type": "object"
+    },
     "BuildTestSteps": {
       "additionalProperties": false,
       "properties": {
@@ -467,6 +519,28 @@
       "default": null,
       "title": "Region"
     },
+    "bedrock_auth": {
+      "default": "bearer",
+      "enum": [
+        "bearer",
+        "sigv4"
+      ],
+      "title": "Bedrock Auth",
+      "type": "string"
+    },
+    "aws_profile": {
+      "anyOf": [
+        {
+          "maxLength": 64,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Aws Profile"
+    },
     "api_key_env": {
       "anyOf": [
         {
@@ -491,7 +565,7 @@
       "items": {
         "type": "string"
       },
-      "maxItems": 10,
+      "maxItems": 11,
       "title": "Capabilities",
       "type": "array"
     },
@@ -531,6 +605,14 @@
       },
       "maxItems": 16,
       "title": "Commands",
+      "type": "array"
+    },
+    "artifact_files": {
+      "items": {
+        "$ref": "#/$defs/ArtifactFile"
+      },
+      "maxItems": 32,
+      "title": "Artifact Files",
       "type": "array"
     },
     "allowed_bash_programs": {
@@ -593,7 +675,7 @@
     },
     "turn_limit": {
       "default": 12,
-      "maximum": 100,
+      "maximum": 200,
       "minimum": 1,
       "title": "Turn Limit",
       "type": "integer"
@@ -658,6 +740,8 @@
     "provider",
     "base_url",
     "region",
+    "bedrock_auth",
+    "aws_profile",
     "api_key_env",
     "model",
     "capabilities",
@@ -665,6 +749,7 @@
     "test_command",
     "build_test_steps",
     "commands",
+    "artifact_files",
     "allowed_bash_programs",
     "additional_env_vars",
     "git_directory",

@@ -1,4 +1,4 @@
-"""Anthropic Messages and OpenAI-compatible provider adapters."""
+"""Anthropic Messages, Amazon Bedrock and OpenAI-compatible provider adapters."""
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
@@ -85,14 +85,20 @@ class _HttpAdapter:
         self.api_key = api_key
         self.client = client
 
+    def _sign(self, endpoint: str, body: bytes, headers: dict[str, str], trace: TraceEmitter) -> dict[str, str]:
+        return headers
+
     async def _post(self, endpoint: str, payload: dict, headers: dict[str, str], timeout: float, trace: TraceEmitter) -> dict:
         trace.emit("provider.request", provider=self.kind, endpoint=endpoint, request=payload)
+        # Serialize once so a request signature covers exactly the bytes that are sent.
+        body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+        headers = self._sign(endpoint, body, headers, trace)
         try:
             if self.client is None:
                 async with httpx.AsyncClient(trust_env=False) as client:
-                    response = await client.post(endpoint, json=payload, headers=headers, timeout=timeout)
+                    response = await client.post(endpoint, content=body, headers=headers, timeout=timeout)
             else:
-                response = await self.client.post(endpoint, json=payload, headers=headers, timeout=timeout)
+                response = await self.client.post(endpoint, content=body, headers=headers, timeout=timeout)
             if response.is_error:
                 try:
                     error_body: Any = response.json()
@@ -242,6 +248,44 @@ class BedrockInvokeAdapter(AnthropicAdapter):
         return {"anthropic_version": "bedrock-2023-05-31"}
 
 
+class BedrockSigV4Adapter(BedrockInvokeAdapter):
+    """Bedrock's Invoke API signed with AWS Signature Version 4. Credentials come
+    from the standard AWS chain (environment, shared config and SSO profiles,
+    container and instance roles) through botocore, an optional dependency, and are
+    re-read for every request so expiring role or SSO credentials refresh mid-run."""
+
+    def __init__(self, client: httpx.AsyncClient | None, region: str, profile: str | None = None,
+                 credentials: Any = None):
+        super().__init__(None, client, region)
+        try:
+            from botocore.auth import SigV4Auth
+            from botocore.awsrequest import AWSRequest
+        except ImportError as error:
+            raise ProviderError("Bedrock SigV4 needs botocore: pip install 'harness-pro[bedrock]'") from error
+        self._sigv4, self._aws_request = SigV4Auth, AWSRequest
+        if credentials is None:
+            import botocore.exceptions
+            import botocore.session
+            try:
+                credentials = botocore.session.Session(profile=profile).get_credentials()
+            except botocore.exceptions.BotoCoreError as error:
+                raise ProviderError(f"AWS credentials could not be resolved ({type(error).__name__})") from error
+        if credentials is None:
+            raise ProviderError("No AWS credentials found for Bedrock SigV4; configure a profile, SSO, or role")
+        self.credentials = credentials
+
+    def _sign(self, endpoint: str, body: bytes, headers: dict[str, str], trace: TraceEmitter) -> dict[str, str]:
+        try:
+            frozen = self.credentials.get_frozen_credentials()
+        except Exception as error:
+            raise ProviderError(f"AWS credentials could not be refreshed ({type(error).__name__})") from error
+        for secret in (frozen.access_key, frozen.secret_key, frozen.token):
+            trace.add_secret(secret)
+        request = self._aws_request(method="POST", url=endpoint, data=body, headers=headers)
+        self._sigv4(frozen, "bedrock", self.region).add_auth(request)
+        return dict(request.headers.items())
+
+
 class OpenAICompatibleAdapter(_HttpAdapter):
     kind = "openai-compatible"
 
@@ -323,6 +367,8 @@ def make_adapter(config: Mapping[str, Any], *, environ: Mapping[str, str] | None
     if config["kind"] == "anthropic":
         return AnthropicAdapter(api_key, client)
     if config["kind"] == "bedrock":
+        if config.get("auth") == "sigv4":
+            return BedrockSigV4Adapter(client, config["region"], config.get("awsProfile"))
         return BedrockInvokeAdapter(api_key, client, config["region"])
     if config["kind"] == "openai-compatible":
         return OpenAICompatibleAdapter(config["baseUrl"], api_key, client)

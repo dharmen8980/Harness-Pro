@@ -483,8 +483,40 @@ def test_bedrock_manifest_compiles_region():
     })
     assert compiled["provider"] == {
         "kind": "bedrock", "baseUrl": None, "region": "us-east-1",
-        "apiKeyEnv": "AWS_BEARER_TOKEN_BEDROCK",
+        "apiKeyEnv": "AWS_BEARER_TOKEN_BEDROCK", "auth": "bearer", "awsProfile": None,
     }
+
+
+def test_bedrock_sigv4_manifest_compiles_without_a_credential_variable():
+    compiled = compile_standalone({
+        "provider": "bedrock", "region": "us-west-2", "bedrock_auth": "sigv4", "aws_profile": "dev-sso",
+        "model": "us.anthropic.claude-sonnet-5",
+    })
+    assert compiled["provider"] == {
+        "kind": "bedrock", "baseUrl": None, "region": "us-west-2",
+        "apiKeyEnv": None, "auth": "sigv4", "awsProfile": "dev-sso",
+    }
+
+
+def test_bedrock_sigv4_rejects_an_explicit_credential_variable():
+    with pytest.raises(ValueError, match="AWS credential chain"):
+        Manifest.model_validate({
+            "provider": "bedrock", "region": "us-east-1", "bedrock_auth": "sigv4",
+            "api_key_env": "AWS_BEARER_TOKEN_BEDROCK", "model": "anthropic.claude-sonnet-5",
+        })
+
+
+@pytest.mark.parametrize("manifest, message", [
+    ({"provider": "bedrock", "region": "us-east-1", "api_key_env": "T", "aws_profile": "dev",
+      "model": "anthropic.claude-sonnet-5"}, "sigv4"),
+    ({"provider": "bedrock", "region": "us-east-1", "bedrock_auth": "sigv4", "aws_profile": "bad profile",
+      "model": "anthropic.claude-sonnet-5"}, "profile name"),
+    ({"provider": "anthropic", "bedrock_auth": "sigv4"}, "only to the bedrock provider"),
+    ({"provider": "anthropic", "aws_profile": "dev"}, "only to the bedrock provider"),
+])
+def test_aws_settings_are_validated(manifest, message):
+    with pytest.raises(ValueError, match=message):
+        Manifest.model_validate(manifest)
 
 
 @pytest.mark.parametrize("region", [None, "US-EAST-1", "us_east_1", "east"])

@@ -19,6 +19,7 @@ NAME = re.compile(r"^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$")
 IDENTIFIER = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$")
 TARGET = re.compile(r"^[a-zA-Z0-9_-]+(?:/[a-zA-Z0-9_.-]+)*$")
 AWS_REGION = re.compile(r"^[a-z]{2}(?:-[a-z0-9]+)+-[0-9]+$")
+AWS_PROFILE = re.compile(r"^[A-Za-z0-9_.+=,@-]{1,64}$")
 BEDROCK_MODEL = re.compile(r"^(?:[a-z]{2,4}\.)?anthropic\.")
 SECRET = re.compile(r"(?:sk-(?:ant-|proj-)?[A-Za-z0-9_-]{16,}|ghp_[A-Za-z0-9]{16,}|github_pat_[A-Za-z0-9_]{16,}|xox[baprs]-[A-Za-z0-9-]{16,}|AKIA[A-Z0-9]{16}|-----BEGIN .*PRIVATE KEY)")
 
@@ -268,6 +269,8 @@ class Manifest(StrictModel):
     provider: Literal["anthropic", "openai-compatible", "bedrock"] = "anthropic"
     base_url: str | None = Field(default=None, max_length=2048)
     region: str | None = Field(default=None, max_length=64)
+    bedrock_auth: Literal["bearer", "sigv4"] = "bearer"
+    aws_profile: str | None = Field(default=None, max_length=64)
     api_key_env: str | None = Field(default="ANTHROPIC_API_KEY", max_length=128)
     model: str = Field(default="claude-sonnet-4-5-20250929", min_length=1, max_length=128)
     capabilities: list[str] = Field(default_factory=lambda: ["repo_read"], max_length=len(BY_ID))
@@ -315,6 +318,8 @@ class Manifest(StrictModel):
 
     @model_validator(mode="after")
     def consistency(self):
+        if self.provider != "bedrock" and (self.bedrock_auth != "bearer" or self.aws_profile is not None):
+            raise ValueError("bedrock_auth and aws_profile apply only to the bedrock provider")
         if self.provider == "anthropic":
             if self.base_url is not None:
                 raise ValueError("Anthropic uses its fixed Messages API endpoint; omit base_url")
@@ -325,8 +330,18 @@ class Manifest(StrictModel):
                 raise ValueError("Bedrock region must be an AWS region such as us-east-1")
             if self.base_url is not None:
                 raise ValueError("Bedrock derives its Messages API endpoint from region; omit base_url")
-            if self.api_key_env is None:
-                raise ValueError("Bedrock requires api_key_env")
+            if self.bedrock_auth == "bearer":
+                if self.api_key_env is None:
+                    raise ValueError("Bedrock bearer authentication requires api_key_env")
+                if self.aws_profile is not None:
+                    raise ValueError("aws_profile applies only to bedrock_auth \"sigv4\"")
+            else:
+                # SigV4 resolves credentials through the standard AWS chain at run time.
+                if "api_key_env" in self.model_fields_set and self.api_key_env is not None:
+                    raise ValueError("Bedrock SigV4 uses the AWS credential chain; set api_key_env to null")
+                object.__setattr__(self, "api_key_env", None)
+                if self.aws_profile is not None and not AWS_PROFILE.fullmatch(self.aws_profile):
+                    raise ValueError("aws_profile must be an AWS profile name")
             if not BEDROCK_MODEL.match(self.model):
                 raise ValueError("Bedrock model must be anthropic.<model> or a cross-region inference profile such as us.anthropic.<model>")
         else:
